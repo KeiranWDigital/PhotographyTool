@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>21:9 Image Splitter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configure Tailwind to use Inter font and enable JIT mode for faster compilation -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Apply Inter font globally and ensure body fills viewport */
+        body {
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+        }
+        /* Custom styles for the result canvases to ensure they are visible */
+        .result-canvas {
+            border: 2px dashed #4F46E5;
+            max-width: 100%;
+            height: auto;
+            border-radius: 0.5rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 flex flex-col items-center p-4 sm:p-8">
+
+    <div class="w-full max-w-6xl bg-white shadow-2xl rounded-xl p-6 sm:p-10 border border-indigo-100">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-extrabold text-indigo-700 mb-2">21:9 Image Splitter & Resizer</h1>
+            <p class="text-gray-500">Upload a panorama (approx. 2.33:1 aspect ratio) to split it or resize it to a 10.5:9 container.</p>
+        </header>
+
+        <!-- Input and Control Area -->
+        <div class="mb-8 border-b pb-6 border-indigo-200">
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+                Upload 21:9 Image (.jpg, .png)
+            </label>
+            <input type="file" id="fileInput" accept="image/png, image/jpeg" class="w-full text-sm text-gray-500
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-full file:border-0
+                file:text-sm file:font-semibold
+                file:bg-indigo-50 file:text-indigo-700
+                hover:file:bg-indigo-100 transition duration-150 ease-in-out" />
+            <div id="image-status" class="mt-2 text-sm text-red-500 h-5"></div>
+        </div>
+
+        <!-- Original Image Preview (Hidden until file is loaded) -->
+        <div id="originalPreviewContainer" class="hidden mb-8 border border-gray-200 rounded-lg p-4 bg-gray-50">
+            <h2 class="text-xl font-semibold text-gray-700 mb-3">Original Image Preview</h2>
+            <!-- Added border and border-gray-300 classes -->
+            <img id="originalImage" class="w-full h-auto rounded-lg shadow-md border border-gray-300" alt="Original Uploaded Image" style="max-height: 300px; object-fit: contain; margin: 0 auto;">
+            <p id="originalDimensions" class="mt-2 text-center text-sm text-gray-500"></p>
+        </div>
+
+        <!-- Split Results -->
+        <div id="resultsContainer" class="hidden">
+            <h2 class="text-2xl font-bold text-indigo-600 mb-6 text-center">Output Results (All 10.5:9 Aspect)</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                
+                <!-- Left Half -->
+                <div class="flex flex-col items-center p-4 bg-indigo-50 rounded-xl shadow-inner">
+                    <h3 class="text-lg font-medium text-gray-700 mb-3">Left Half (Crop)</h3>
+                    <canvas id="canvasLeft" class="result-canvas mb-4 shadow-lg"></canvas>
+                    <button onclick="downloadImage('canvasLeft', 'left_half.png')"
+                            class="w-full sm:w-auto px-6 py-2 bg-indigo-500 text-white font-semibold rounded-full shadow-lg hover:bg-indigo-600 transition duration-200 ease-in-out">
+                        Download Left Half
+                    </button>
+                </div>
+
+                <!-- Right Half -->
+                <div class="flex flex-col items-center p-4 bg-indigo-50 rounded-xl shadow-inner">
+                    <h3 class="text-lg font-medium text-gray-700 mb-3">Right Half (Crop)</h3>
+                    <canvas id="canvasRight" class="result-canvas mb-4 shadow-lg"></canvas>
+                    <button onclick="downloadImage('canvasRight', 'right_half.png')"
+                            class="w-full sm:w-auto px-6 py-2 bg-indigo-500 text-white font-semibold rounded-full shadow-lg hover:bg-indigo-600 transition duration-200 ease-in-out">
+                        Download Right Half
+                    </button>
+                </div>
+                
+                <!-- Fit Whole Image -->
+                <div class="flex flex-col items-center p-4 bg-indigo-50 rounded-xl shadow-inner">
+                    <h3 class="text-lg font-medium text-gray-700 mb-3">Contained View (Pillarbox)</h3>
+                    <canvas id="canvasFit" class="result-canvas mb-4 shadow-lg"></canvas>
+                    <button onclick="downloadImage('canvasFit', 'full_image_fit.png')"
+                            class="w-full sm:w-auto px-6 py-2 bg-indigo-500 text-white font-semibold rounded-full shadow-lg hover:bg-indigo-600 transition duration-200 ease-in-out">
+                        Download Contained View
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const originalImage = document.getElementById('originalImage');
+        const originalPreviewContainer = document.getElementById('originalPreviewContainer');
+        const originalDimensions = document.getElementById('originalDimensions');
+        const imageStatus = document.getElementById('image-status');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const canvasLeft = document.getElementById('canvasLeft');
+        const canvasRight = document.getElementById('canvasRight');
+        const canvasFit = document.getElementById('canvasFit'); // New canvas reference
+
+        // Global variable to hold the loaded Image object
+        let loadedImg = null;
+
+        // Tolerance for 21:9 aspect ratio check (21/9 ≈ 2.3333)
+        const TARGET_RATIO = 21 / 9;
+        const RATIO_TOLERANCE = 0.05; // 5% tolerance
+        const TARGET_FIT_RATIO = 10.5 / 9; // 10.5:9 aspect ratio for all output canvases
+
+        fileInput.addEventListener('change', handleFileSelect);
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            imageStatus.textContent = "";
+            resultsContainer.classList.add('hidden');
+            originalPreviewContainer.classList.add('hidden');
+
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                originalImage.src = e.target.result;
+                originalImage.onload = () => {
+                    loadedImg = originalImage;
+                    processImage(loadedImg);
+                };
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function processImage(img) {
+            const width = img.naturalWidth;
+            const height = img.naturalHeight;
+            const aspectRatio = width / height;
+
+            // Display dimensions
+            originalDimensions.textContent = `Dimensions: ${width}px x ${height}px. Aspect Ratio: ${aspectRatio.toFixed(3)}:1`;
+
+            // Validate Aspect Ratio
+            const minRatio = TARGET_RATIO - RATIO_TOLERANCE;
+            const maxRatio = TARGET_RATIO + RATIO_TOLERANCE;
+
+            if (aspectRatio < minRatio || aspectRatio > maxRatio) {
+                imageStatus.textContent = `Warning: Aspect ratio (${aspectRatio.toFixed(3)}:1) is not close to 21:9 (2.33:1). The results may be stretched or cropped incorrectly.`;
+                imageStatus.classList.remove('text-green-600');
+                imageStatus.classList.add('text-red-500');
+            } else {
+                imageStatus.textContent = "Image loaded and aspect ratio is within tolerance.";
+                imageStatus.classList.remove('text-red-500');
+                imageStatus.classList.add('text-green-600');
+            }
+
+            originalPreviewContainer.classList.remove('hidden');
+            
+            // Start Splitting and Resizing
+            splitAndDraw(img, width, height);
+        }
+
+        function splitAndDraw(img, W, H) {
+            const halfW = W / 2;
+
+            // --- 1. Left Half (10.5:9 Crop) ---
+            canvasLeft.width = halfW;
+            canvasLeft.height = H;
+            const ctxLeft = canvasLeft.getContext('2d');
+            ctxLeft.clearRect(0, 0, halfW, H);
+            ctxLeft.drawImage(img, 
+                0, 0, halfW, H, // Source (left half of original image)
+                0, 0, halfW, H  // Destination (full canvas)
+            );
+
+            // --- 2. Right Half (10.5:9 Crop) ---
+            canvasRight.width = halfW;
+            canvasRight.height = H;
+            const ctxRight = canvasRight.getContext('2d');
+            ctxRight.clearRect(0, 0, halfW, H);
+            ctxRight.drawImage(img, 
+                halfW, 0, halfW, H, // Source (right half of original image)
+                0, 0, halfW, H      // Destination (full canvas)
+            );
+
+            // --- 3. Contained Fit (21:9 image fit into 10.5:9 canvas) ---
+            
+            // We set the canvas height to the original image height for consistency
+            canvasFit.height = H;
+            // Calculate canvas width to maintain the 10.5:9 aspect ratio: W_fit = H * (10.5/9)
+            canvasFit.width = H * TARGET_FIT_RATIO; 
+            
+            const ctxFit = canvasFit.getContext('2d');
+            ctxFit.clearRect(0, 0, canvasFit.width, canvasFit.height);
+            
+            // --- DRAW BLURRED BACKGROUND (Pillarbox Area) ---
+            
+            // Calculate scale to cover the target canvas (cover/zoom effect)
+            const scaleFactor = Math.max(canvasFit.width / W, canvasFit.height / H);
+            
+            const bgDrawW = W * scaleFactor;
+            const bgDrawH = H * scaleFactor;
+            const bgDrawX = (canvasFit.width - bgDrawW) / 2;
+            const bgDrawY = (canvasFit.height - bgDrawH) / 2;
+
+            // Apply blur filter
+            ctxFit.filter = 'blur(10px)'; 
+            
+            // Draw the image scaled to cover the canvas
+            ctxFit.drawImage(img, 0, 0, W, H, bgDrawX, bgDrawY, bgDrawW, bgDrawH);
+            
+            // Reset filter for the sharp foreground image
+            ctxFit.filter = 'none'; 
+
+            // --- DRAW SHARP CONTAINED IMAGE ---
+            
+            // Calculate dimensions for the sharp image to be contained (scaled down to fit inside)
+            const scale = canvasFit.width / W; 
+            
+            const drawW = W * scale; 
+            const drawH = H * scale; 
+
+            // Calculate vertical offset to center the image
+            const xOffset = (canvasFit.width - drawW) / 2; 
+            const yOffset = (canvasFit.height - drawH) / 2; 
+
+            ctxFit.drawImage(img,
+                0, 0, W, H,                      // Source rectangle (full original image)
+                xOffset, yOffset, drawW, drawH   // Destination rectangle (centered and scaled)
+            );
+            
+            // --- DRAW WHITE BORDER around the Contained Image ---
+            ctxFit.strokeStyle = '#FFFFFF'; // White border
+            ctxFit.lineWidth = 4;
+            // Draw the border around the area of the sharp image
+            ctxFit.strokeRect(xOffset, yOffset, drawW, drawH);
+
+            // Show results
+            resultsContainer.classList.remove('hidden');
+        }
+
+        function downloadImage(canvasId, filename) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas || !canvas.width) {
+                // Use a custom message box instead of alert()
+                displayMessage('No image is currently processed to download. Please upload an image first.', 'error');
+                return;
+            }
+
+            // Get the image data as a PNG URL
+            const imageURL = canvas.toDataURL("image/png");
+            
+            // Create a temporary anchor element for download
+            const link = document.createElement('a');
+            link.href = imageURL;
+            link.download = filename;
+            
+            // Programmatically click the link to trigger the download
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            displayMessage(`Successfully downloaded ${filename}!`, 'success');
+        }
+
+        // Custom Message Display (to replace alert())
+        function displayMessage(message, type) {
+            const container = document.getElementById('image-status');
+            container.textContent = message;
+            container.className = 'mt-2 text-sm h-5';
+            
+            if (type === 'error') {
+                container.classList.add('text-red-500');
+            } else if (type === 'success') {
+                container.classList.add('text-green-600');
+            } else {
+                container.classList.add('text-gray-600');
+            }
+        }
+    </script>
+</body>
+</html>

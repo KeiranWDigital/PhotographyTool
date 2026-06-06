@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Carousel Generator (4:5 & 5:4)</title>
+    <style>
+        :root {
+            --bg-color: #f4f4f7;
+            --card-bg: #ffffff;
+            --primary: #4f46e5;
+            --text: #1f2937;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 { margin-bottom: 5px; color: #111827; }
+        p { color: #6b7280; margin-top: 0; }
+
+        /* Controls Section */
+        .controls {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label { font-weight: 600; font-size: 0.85rem; color: #4b5563; }
+
+        input[type="file"] {
+            padding: 10px;
+            border: 2px dashed #cbd5e1;
+            border-radius: 8px;
+            cursor: pointer;
+            background: #f8fafc;
+        }
+
+        select {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #cbd5e1;
+            background: white;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        input[type="range"] { width: 140px; }
+
+        /* Preview Grid */
+        .preview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 25px;
+            width: 100%;
+        }
+
+        .carousel-card {
+            background: var(--card-bg);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+
+        /* Responsive Canvas Wrapper */
+        .canvas-container {
+            width: 100%;
+            position: relative;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.05);
+            transition: aspect-ratio 0.2s ease;
+        }
+
+        /* Dynamically controlled by data attributes */
+        .canvas-container[data-ratio="portrait"] { aspect-ratio: 4 / 5; }
+        .canvas-container[data-ratio="landscape"] { aspect-ratio: 5 / 4; }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .btn {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            width: 100%;
+            text-align: center;
+            text-decoration: none;
+        }
+
+        .btn:hover { background-color: #4338ca; }
+        
+        .btn-all {
+            background-color: #10b981;
+            align-self: flex-end;
+        }
+        .btn-all:hover { background-color: #059669; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Instagram Carousel Generator</h1>
+        <p>Batch convert images into white-background slides with clean drop shadows.</p>
+    </header>
+
+    <div class="controls">
+        <div class="control-group">
+            <label for="image-input">Upload Images (Select multiple)</label>
+            <input type="file" id="image-input" accept="image/*" multiple>
+        </div>
+
+        <div class="control-group">
+            <label for="ratio-select">Canvas Orientation</label>
+            <select id="ratio-select">
+                <option value="portrait">4:5 Portrait (Vertical)</option>
+                <option value="landscape">5:4 Landscape (Horizontal)</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
+            <label for="padding-slider">Image Size (Padding): <span id="padding-val">15</span>%</label>
+            <input type="range" id="padding-slider" min="5" max="45" value="15">
+        </div>
+
+        <div class="control-group">
+            <label for="shadow-slider">Shadow Blur: <span id="shadow-val">30</span>px</label>
+            <input type="range" id="shadow-slider" min="5" max="100" value="30">
+        </div>
+
+        <div class="control-group" style="margin-left: auto; align-self: flex-end;">
+            <button id="download-all" class="btn btn-all" style="display: none;">Download All Images</button>
+        </div>
+    </div>
+
+    <div class="preview-grid" id="preview-grid">
+        </div>
+</div>
+
+<script>
+    const imageInput = document.getElementById('image-input');
+    const ratioSelect = document.getElementById('ratio-select');
+    const paddingSlider = document.getElementById('padding-slider');
+    const shadowSlider = document.getElementById('shadow-slider');
+    const paddingVal = document.getElementById('padding-val');
+    const shadowVal = document.getElementById('shadow-val');
+    const previewGrid = document.getElementById('preview-grid');
+    const downloadAllBtn = document.getElementById('download-all');
+
+    let loadedImages = [];
+
+    // Canvas resolution presets
+    const PRESETS = {
+        portrait: { width: 1080, height: 1350 },
+        landscape: { width: 1350, height: 1080 }
+    };
+
+    imageInput.addEventListener('change', handleImages);
+    ratioSelect.addEventListener('change', renderAll);
+    paddingSlider.addEventListener('input', () => { paddingVal.textContent = paddingSlider.value; renderAll(); });
+    shadowSlider.addEventListener('input', () => { shadowVal.textContent = shadowSlider.value; renderAll(); });
+    downloadAllBtn.addEventListener('click', downloadAll);
+
+    function handleImages(e) {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        loadedImages = [];
+        previewGrid.innerHTML = '';
+        downloadAllBtn.style.display = 'block';
+
+        let loadedCount = 0;
+
+        files.forEach((file, index) => {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    loadedImages[index] = { img, name: file.name.split('.')[0] };
+                    loadedCount++;
+                    if (loadedCount === files.length) {
+                        renderAll();
+                    }
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function renderAll() {
+        previewGrid.innerHTML = '';
+        if (loadedImages.length === 0) return;
+
+        const currentOrientation = ratioSelect.value;
+        const currentPreset = PRESETS[currentOrientation];
+        
+        const paddingPercent = parseInt(paddingSlider.value) / 100;
+        const shadowBlur = parseInt(shadowSlider.value);
+
+        loadedImages.forEach((item, index) => {
+            if (!item) return;
+
+            const card = document.createElement('div');
+            card.className = 'carousel-card';
+
+            const canvasContainer = document.createElement('div');
+            canvasContainer.className = 'canvas-container';
+            canvasContainer.setAttribute('data-ratio', currentOrientation);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = currentPreset.width;
+            canvas.height = currentPreset.height;
+            
+            canvasContainer.appendChild(canvas);
+            card.appendChild(canvasContainer);
+
+            const downloadBtn = document.createElement('button');
+            downloadBtn.className = 'btn';
+            downloadBtn.innerText = `Download Slide ${index + 1}`;
+            downloadBtn.onclick = () => downloadCanvas(canvas, `slide-${index + 1}.png`);
+            card.appendChild(downloadBtn);
+
+            previewGrid.appendChild(card);
+
+            drawInstagramFrame(canvas, item.img, currentPreset.width, currentPreset.height, paddingPercent, shadowBlur);
+        });
+    }
+
+    function drawInstagramFrame(canvas, img, canvasWidth, canvasHeight, paddingPercent, shadowBlur) {
+        const ctx = canvas.getContext('2d');
+        
+        // 1. Reset & Background Canvas Color
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+        // 2. Safe zone constraint calculations
+        const maxAvailableWidth = canvasWidth * (1 - paddingPercent * 2);
+        const maxAvailableHeight = canvasHeight * (1 - paddingPercent * 2);
+
+        // 3. Keep Aspect Ratio calculations
+        const imgRatio = img.width / img.height;
+        const targetRatio = maxAvailableWidth / maxAvailableHeight;
+
+        let renderWidth, renderHeight;
+
+        if (imgRatio > targetRatio) {
+            renderWidth = maxAvailableWidth;
+            renderHeight = maxAvailableWidth / imgRatio;
+        } else {
+            renderHeight = maxAvailableHeight;
+            renderWidth = maxAvailableHeight * imgRatio;
+        }
+
+        const x = (canvasWidth - renderWidth) / 2;
+        const y = (canvasHeight - renderHeight) / 2;
+
+        // 4. Custom Dropped Shadow settings
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+        ctx.shadowBlur = shadowBlur;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = shadowBlur * 0.3; 
+
+        // 5. Paint Image onto canvas frame
+        ctx.drawImage(img, x, y, renderWidth, renderHeight);
+        
+        ctx.shadowColor = 'transparent';
+    }
+
+    function downloadCanvas(canvas, filename) {
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    }
+
+    function downloadAll() {
+        const canvases = previewGrid.querySelectorAll('canvas');
+        canvases.forEach((canvas, index) => {
+            setTimeout(() => {
+                downloadCanvas(canvas, `instagram-carousel-${index + 1}.png`);
+            }, index * 250);
+        });
+    }
+</script>
+</body>
+</html>

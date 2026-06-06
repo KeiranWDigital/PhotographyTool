@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EXIF Caption Generator</title>
+
+    <!-- 1. EXIF.js library for reading image metadata -->
+    <script src="exif.js"></script>
+
+    <!-- 2. Custom font and styling (replaces Tailwind) -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        /* --- CSS Color Palette (from Tailwind) --- */
+        :root {
+            --bg-dark: #111827;
+            /* gray-900 */
+            --bg-medium: #1F2937;
+            /* gray-800 */
+            --bg-light: #374151;
+            /* gray-700 */
+            --border-color: #4B5563;
+            /* gray-600 */
+            --text-primary: #E5E7EB;
+            /* gray-200 */
+            --text-secondary: #9CA3AF;
+            /* gray-400 */
+            --text-tertiary: #6B7280;
+            /* gray-500 */
+            --text-label: #D1D5DB;
+            /* gray-300 */
+            --text-white: #FFFFFF;
+            --accent-primary: #4F46E5;
+            /* indigo-600 */
+            --accent-hover: #6366F1;
+            /* indigo-500 */
+            --accent-focus: #818CF8;
+            /* indigo-400 */
+            --btn-secondary-bg: #4B5563;
+            /* gray-600 */
+            --btn-secondary-hover: #6B7280;
+            /* gray-500 */
+            --error-bg: #7f1d1d;
+            /* approx red-900 */
+            --error-border: #b91c1c;
+            /* approx red-700 */
+            --error-text: #fca5a5;
+            /* approx red-300 */
+        }
+
+        /* --- End Palette --- */
+
+        /* --- Base Styles --- */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Hide the default file input */
+        #file-upload {
+            display: none;
+        }
+
+        /* Utility class for JS */
+        .hidden {
+            display: none !important;
+        }
+
+        /* --- Layout --- */
+        .container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            box-sizing: border-box;
+        }
+
+        .card {
+            background-color: var(--bg-medium);
+            width: 100%;
+            max-width: 512px;
+            /* max-w-lg */
+            padding: 1.5rem;
+            /* p-6 */
+            border-radius: 1rem;
+            /* rounded-2xl */
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            /* shadow-2xl */
+            border: 1px solid var(--border-color);
+        }
+
+        /* --- Header --- */
+        .header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            /* mb-6 */
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            /* text-2xl */
+            font-weight: 700;
+            color: var(--text-white);
+            margin: 0 0 0.5rem 0;
+            /* mb-2 */
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            /* text-sm */
+            margin: 0;
+        }
+
+        /* --- Upload Area --- */
+        #upload-area-label {
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 12rem;
+            /* h-48 */
+            background-color: var(--bg-dark);
+            border: 2px dashed var(--border-color);
+            border-radius: 0.5rem;
+            /* rounded-lg */
+            transition: background-color 0.2s ease-in-out;
+        }
+
+        #upload-area-label:hover {
+            background-color: var(--bg-light);
+            /* hover:bg-gray-700 */
+        }
+
+        .upload-icon-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding-top: 1.25rem;
+            /* pt-5 */
+            padding-bottom: 1.5rem;
+            /* pb-6 */
+        }
+
+        .upload-icon-container svg {
+            width: 2.5rem;
+            /* w-10 */
+            height: 2.5rem;
+            /* h-10 */
+            margin-bottom: 0.75rem;
+            /* mb-3 */
+            color: var(--text-tertiary);
+        }
+
+        .upload-text {
+            margin: 0 0 0.5rem 0;
+            /* mb-2 */
+            font-size: 0.875rem;
+            /* text-sm */
+            color: var(--text-secondary);
+        }
+
+        .upload-text-small {
+            margin: 0;
+            font-size: 0.75rem;
+            /* text-xs */
+            color: var(--text-tertiary);
+        }
+
+        .upload-text span {
+            font-weight: 600;
+            /* font-semibold */
+        }
+
+        /* --- Loading Spinner --- */
+        #loading-spinner {
+            text-align: center;
+            padding: 4rem 0;
+            /* py-16 */
+        }
+
+        #loading-spinner svg {
+            animation: spin 1s linear infinite;
+            width: 2rem;
+            /* h-8 w-8 */
+            height: 2rem;
+            color: var(--accent-focus);
+            margin: 0 auto;
+            /* mx-auto */
+        }
+
+        #loading-spinner p {
+            margin-top: 1rem;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            /* text-sm */
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* --- Error Message --- */
+        #error-message {
+            text-align: center;
+            background-color: var(--error-bg);
+            border: 1px solid var(--error-border);
+            color: var(--error-text);
+            padding: 0.75rem 1rem;
+            /* px-4 py-3 */
+            border-radius: 0.5rem;
+            /* rounded-lg */
+            margin-top: 1.5rem;
+            /* mt-6 */
+        }
+
+        /* --- Results Area --- */
+        #results-area {
+            margin-top: 1.5rem;
+            /* mt-6 */
+        }
+
+        .label {
+            display: block;
+            font-size: 0.875rem;
+            /* text-sm */
+            font-weight: 500;
+            /* font-medium */
+            color: var(--text-label);
+            margin-bottom: 0.5rem;
+            /* mb-2 */
+        }
+
+        #caption-output {
+            width: 100%;
+            box-sizing: border-box;
+            /* Ensures padding doesn't break width */
+            padding: 1rem;
+            /* p-4 */
+            background-color: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            /* rounded-lg */
+            color: var(--text-primary);
+            font-family: 'Menlo', 'Courier New', monospace;
+            /* font-mono */
+            font-size: 0.875rem;
+            /* text-sm */
+            resize: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        #caption-output:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 2px var(--accent-primary);
+            /* focus:ring-2 */
+        }
+
+        /* --- Buttons --- */
+        .button-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            /* gap-3 */
+            margin-top: 1rem;
+            /* mt-4 */
+        }
+
+        .btn {
+            width: 100%;
+            font-weight: 600;
+            /* font-semibold */
+            padding: 0.5rem 1rem;
+            /* py-2 px-4 */
+            border-radius: 0.5rem;
+            /* rounded-lg */
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        .btn-primary {
+            background-color: var(--accent-primary);
+            color: var(--text-white);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--accent-hover);
+        }
+
+        .btn-primary:focus {
+            box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.75);
+            /* focus:ring-2 focus:ring-indigo-400 focus:ring-opacity-75 */
+        }
+
+        .btn-secondary {
+            background-color: var(--btn-secondary-bg);
+            color: var(--text-white);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--btn-secondary-hover);
+        }
+
+        .btn-secondary:focus {
+            box-shadow: 0 0 0 2px rgba(156, 163, 175, 0.75);
+            /* focus:ring-gray-400 */
+        }
+
+        /* --- Debug Area --- */
+        .debug-container {
+            margin-top: 1rem;
+            /* mt-4 */
+        }
+
+        #debug-button {
+            font-size: 0.75rem;
+            /* text-xs */
+            color: var(--text-tertiary);
+            background: none;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            transition: color 0.2s ease-in-out;
+        }
+
+        #debug-button:hover {
+            color: var(--text-label);
+            /* hover:text-gray-300 */
+        }
+
+        #debug-output {
+            margin-top: 0.5rem;
+            /* mt-2 */
+            padding: 0.75rem;
+            /* p-3 */
+            background-color: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            /* rounded-lg */
+            font-size: 0.75rem;
+            /* text-xs */
+            color: var(--text-secondary);
+            max-height: 12rem;
+            /* max-h-48 */
+            overflow: auto;
+            white-space: pre-wrap;
+            /* Allows wrapping */
+            word-break: break-all;
+            /* Breaks long strings */
+        }
+
+        /* --- Responsive Styles (sm: breakpoint) --- */
+        @media (min-width: 640px) {
+            .card {
+                padding: 2rem;
+                /* sm:p-8 */
+            }
+
+            .header h1 {
+                font-size: 1.875rem;
+                /* sm:text-3xl */
+            }
+
+            .header p {
+                font-size: 1rem;
+                /* sm:text-base */
+            }
+
+            .button-container {
+                flex-direction: row;
+                /* sm:flex-row */
+            }
+
+            .btn {
+                width: 50%;
+                /* sm:w-1/2 */
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-gray-900 text-gray-200">
+
+    <div class="container">
+        <div class="card">
+
+            <!-- Header -->
+            <div class="header">
+                <h1>EXIF Caption Generator</h1>
+                <p>Upload your photo to instantly generate the Instagram caption.</p>
+            </div>
+
+            <!-- File Upload Area -->
+            <div id="upload-area">
+                <label for="file-upload" id="upload-area-label">
+                    <div class="upload-icon-container">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12">
+                            </path>
+                        </svg>
+                        <p class="upload-text"><span>Click to upload</span> or drag and drop</p>
+                        <p class="upload-text-small">JPEG files only</p>
+                    </div>
+                </label>
+                <input id="file-upload" type="file" accept="image/jpeg" />
+            </div>
+
+            <!-- Loading Spinner (Hidden by default) -->
+            <div id="loading-spinner" class="hidden">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                    </path>
+                </svg>
+                <p>Reading image data...</p>
+            </div>
+
+            <!-- Error Message (Hidden by default) -->
+            <div id="error-message" class="hidden">
+                <!-- Error text will be inserted here -->
+            </div>
+
+            <!-- Results Area (Hidden by default) -->
+            <div id="results-area" class="hidden">
+                <label for="caption-output" class="label">Your Caption:</label>
+                <textarea id="caption-output" rows="7" readonly></textarea>
+
+                <div class="button-container">
+                    <button id="copy-button" class="btn btn-primary">
+                        Copy to Clipboard
+                    </button>
+                    <button id="clear-button" class="btn btn-secondary">
+                        Clear
+                    </button>
+                </div>
+
+                <!-- Debug Area -->
+                <div class="debug-container">
+                    <button id="debug-button">Show All Tags</button>
+                    <pre id="debug-output" class="hidden"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get all necessary DOM elements
+        const fileUpload = document.getElementById('file-upload');
+        const uploadArea = document.getElementById('upload-area');
+        const uploadAreaLabel = document.getElementById('upload-area-label'); // Added for drag styling
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const resultsArea = document.getElementById('results-area');
+        const captionOutput = document.getElementById('caption-output');
+        const copyButton = document.getElementById('copy-button');
+        const clearButton = document.getElementById('clear-button');
+        const errorMessage = document.getElementById('error-message');
+        const debugButton = document.getElementById('debug-button');
+        const debugOutput = document.getElementById('debug-output');
+
+        // --- Event Listeners ---
+
+        // 1. Standard file input click
+        fileUpload.addEventListener('change', (event) => {
+            processFile(event.target.files[0]);
+        });
+
+        // 2. Drag and Drop Events
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Highlight drop area when dragging over
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight(e) {
+            uploadAreaLabel.style.backgroundColor = 'var(--bg-light)';
+            uploadAreaLabel.style.borderColor = 'var(--accent-primary)';
+        }
+
+        function unhighlight(e) {
+            uploadAreaLabel.style.backgroundColor = '';
+            uploadAreaLabel.style.borderColor = '';
+        }
+
+        // Handle the actual drop
+        uploadArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const file = dt.files[0];
+
+            // Ensure it's a JPEG
+            if (file && (file.type === 'image/jpeg' || file.type === 'image/jpg')) {
+                processFile(file);
+            } else {
+                showError("Please drop a valid JPEG file.");
+            }
+        }
+
+        // Other UI listeners
+        copyButton.addEventListener('click', copyToClipboard);
+        clearButton.addEventListener('click', resetTool);
+        debugButton.addEventListener('click', () => {
+            debugOutput.classList.toggle('hidden');
+        });
+
+        // --- Core Functions ---
+
+        /**
+         * Handles the file processing, shows loading, and triggers EXIF parsing.
+         */
+        function processFile(file) {
+            if (!file) return;
+
+            // Hide upload area, show loading
+            uploadArea.classList.add('hidden');
+            errorMessage.classList.add('hidden');
+            resultsArea.classList.add('hidden');
+            loadingSpinner.classList.remove('hidden');
+
+            // Use EXIF.js to read the data
+            EXIF.getData(file, function () {
+                const tags = EXIF.getAllTags(this);
+                console.log(tags);
+
+                // --- Store tags for debugging ---
+                let debugInfo = "EXIF.js Tags:\n\n";
+                if (Object.keys(tags).length > 0) {
+                    for (const tag in tags) {
+                        if (Object.prototype.hasOwnProperty.call(tags, tag)) {
+                            let value = tags[tag];
+                            if (Array.isArray(value) && value.length > 20) {
+                                value = `[Array of length ${value.length}]`;
+                            } else if (value instanceof Uint8Array) {
+                                value = `[Uint8Array of length ${value.length}]`;
+                            } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                                value = JSON.stringify(value);
+                            }
+                            debugInfo += `${tag}: ${value}\n`;
+                        }
+                    }
+                } else {
+                    debugInfo = "No EXIF tags were found by the library.";
+                }
+                debugOutput.textContent = debugInfo;
+                // --- End of debug logic ---
+
+                // Hide loading spinner
+                loadingSpinner.classList.add('hidden');
+
+                if (Object.keys(tags).length === 0) {
+                    showError("No EXIF data found in this image. It might be a PNG or a file stripped of metadata.");
+                    return;
+                }
+
+                try {
+                    const caption = generateCaption(tags);
+                    captionOutput.value = caption;
+                    resultsArea.classList.remove('hidden');
+                } catch (error) {
+                    console.error("Error generating caption:", error);
+                    showError("Could not parse EXIF data. The file might be corrupted.");
+                }
+            });
+        }
+
+        /**
+         * Copies the generated caption to the clipboard.
+         */
+        function copyToClipboard() {
+            captionOutput.select();
+            document.execCommand('copy');
+            copyButton.textContent = 'Copied!';
+            setTimeout(() => {
+                copyButton.textContent = 'Copy to Clipboard';
+            }, 2000);
+        }
+
+        /**
+         * Resets the tool to its initial state.
+         */
+        function resetTool() {
+            resultsArea.classList.add('hidden');
+            errorMessage.classList.add('hidden');
+            uploadArea.classList.remove('hidden');
+            fileUpload.value = ''; // Clear the file input
+            captionOutput.value = '';
+            debugOutput.textContent = '';
+            debugOutput.classList.add('hidden');
+        }
+
+        /**
+         * Displays an error message to the user.
+         */
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.remove('hidden');
+            uploadArea.classList.remove('hidden');
+        }
+
+        // --- Caption Generation Logic ---
+
+        function generateCaption(tags) {
+            const lines = [];
+
+            const shutterSpeed = formatShutterSpeed(tags.ExposureTime);
+            if (shutterSpeed) lines.push(`⏱️ ${shutterSpeed}`);
+
+            const aperture = formatAperture(tags.FNumber);
+            if (aperture) lines.push(`👁️ ${aperture}`);
+
+            const iso = formatISO(tags.ISOSpeedRatings);
+            if (iso) lines.push(`☀️ ${iso}`);
+
+            const focalLength = formatFocalLength(tags.FocalLength);
+            if (focalLength) lines.push(`📏 ${focalLength}`);
+
+            const lensInfo = tags.LensModel || tags.undefined;
+            const gear = formatGear(tags.Model, lensInfo, tags.Make);
+            if (gear) lines.push(`📸 ${gear}`);
+
+            const software = formatSoftware(tags.Software);
+            if (software) lines.push(`👨‍💻 ${software}`);
+
+            return lines.join('\n');
+        }
+
+        function formatShutterSpeed(val) {
+            if (!val) return null;
+            if (val < 1) {
+                return `1/${Math.round(1 / val)}s`;
+            }
+            return `${val}s`;
+        }
+
+        function formatAperture(val) {
+            if (!val) return null;
+            return `F/${val}`;
+        }
+
+        function formatISO(val) {
+            if (!val) return null;
+            const isoValue = Array.isArray(val) ? val[0] : val;
+            return `ISO ${isoValue}`;
+        }
+
+        function formatFocalLength(val) {
+            if (val === undefined || val === null) return null;
+            return `${Math.round(val)}mm`;
+        }
+
+        function formatSoftware(val) {
+            if (!val) {
+                return "Post processed using Adobe Lightroom Classic";
+            }
+            const softwareStr = val.toString().toLowerCase();
+            if (softwareStr.includes('capture one')) {
+                return "Post processed using Capture One";
+            }
+            return "Post processed using Adobe Lightroom Classic";
+        }
+
+        function formatGear(camera, lens, make) {
+            let cameraStr = (camera && String(camera) !== "undefined") ? String(camera) : "";
+            let lensStr = (lens && String(lens) !== "undefined") ? String(lens) : "";
+            let makeStr = (make && String(make) !== "undefined") ? String(make) : "";
+            let cameraMakeStr = "";
+
+            if (!cameraStr && !lensStr) return null;
+
+            cameraMakeStr = makeStr.replace(/OLYMPUS CORPORATION/gi, 'Olympus')
+                .replace(/OM SYSTEM/gi, 'OM System')
+                .replace(/OM DIGITAL SOLUTIONS/gi, 'OM System');
+
+            cameraStr = cameraStr.replace(/OM-1MarkII/gi, 'OM-1 MKII');
+
+            lensStr = lensStr.replace(/OLYMPUS CORPORATION/gi, 'Olympus')
+                .replace(/OM SYSTEM/gi, 'OM System')
+                .replace(/M\.ZUIKO DIGITAL ED/gi, '')
+                .replace(/M\./gi, '')
+                .replace(/1:/gi, 'F')
+                .replace(/OLYMPUS/gi, 'Olympus');
+
+            lensStr = lensStr.replace(/OM System 100-400mm F5.0-6.3(?! MkII)/gi, 'OM System 100-400mm F5.0-6.3 MkII');
+
+            cameraStr = cameraStr.replace(/\s+/g, ' ').trim();
+            lensStr = lensStr.replace(/\s+/g, ' ').trim();
+            cameraMakeStr = cameraMakeStr.replace(/\s+/g, ' ').trim();
+
+            if (cameraStr && lensStr) {
+                return `${cameraMakeStr} ${cameraStr} with ${lensStr}`;
+            }
+            if (cameraStr) {
+                return `${cameraMakeStr} ${cameraStr}`;
+            }
+            return (cameraStr || lensStr);
+        }
+    </script>
+</body>
+
+</html>
